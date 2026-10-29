@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B747 엔진 진동 예지진단 시스템 · EVMS</title>
+<style>
+  :root{
+    --bg:#0B1220;            /* 콕핏 계기판 다크 */
+    --panel:#111C2E;
+    --panel-2:#16233A;
+    --line:#25344F;
+    --ink:#E6EDF7;
+    --ink-dim:#8FA3BF;
+    --n1:#4EA8E8;           /* 저압 계통 = 시안블루 */
+    --n2:#F0932B;           /* 고압 계통 = 앰버 */
+    --egt:#FF7A59;          /* 온도 계통 = 오렌지레드 */
+    --oil:#2FB7A6;          /* 윤활 계통 = 틸 */
+    --ok:#2ECC71;           /* EICAS GREEN */
+    --caution:#F1C40F;      /* EICAS AMBER */
+    --warn:#E74C3C;         /* EICAS RED */
+    --grid:rgba(78,168,232,.10);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1200px 700px at 20% -10%, #16263F 0%, transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:"Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+    min-height:100vh; padding:20px 16px 60px;
+  }
+  .wrap{max-width:1240px;margin:0 auto}
+
+  /* ---------- 헤더 ---------- */
+  header{
+    display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:22px;flex-wrap:wrap;
+  }
+  .brand h1{
+    font-size:26px;font-weight:800;letter-spacing:-.4px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .brand h1 .chip{
+    font-size:11px;font-weight:700;letter-spacing:1.4px;color:#0B1220;
+    background:var(--n1);padding:3px 8px;border-radius:3px;
+  }
+  .brand p{color:var(--ink-dim);font-size:13px;margin-top:6px}
+  .status-led{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-dim);
+    font-variant-numeric:tabular-nums}
+  .led{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);
+    animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ---------- 레이아웃 ---------- */
+  .grid{display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start}
+  @media(max-width:980px){.grid{grid-template-columns:1fr}}
+
+  .card{
+    background:linear-gradient(180deg,var(--panel) 0%,var(--panel-2) 100%);
+    border:1px solid var(--line);border-radius:10px;padding:18px;
+  }
+  .card h2{
+    font-size:12px;letter-spacing:1.6px;font-weight:700;color:var(--ink-dim);
+    text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px;
+  }
+  .card h2::before{content:"";width:3px;height:13px;background:var(--n1);border-radius:2px}
+
+  /* ---------- 입력 ---------- */
+  .field{margin-bottom:13px}
+  .field label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:12.5px;color:var(--ink-dim);margin-bottom:5px}
+  .field label .hint{font-size:10.5px;color:#63799A}
+  .field input,.field select{
+    width:100%;background:#0A1220;border:1px solid var(--line);border-radius:6px;
+    color:var(--ink);padding:9px 11px;font-size:15px;font-weight:600;
+    font-variant-numeric:tabular-nums;outline:none;transition:.15s;
+  }
+  .field input:focus,.field select:focus{border-color:var(--n1);box-shadow:0 0 0 3px rgba(78,168,232,.15)}
+  .field.n1 input{color:var(--n1)} .field.n2 input{color:var(--n2)}
+  .field.meas input{color:#FFF;background:#0E1A2B}
+  .field.egt input{color:var(--egt);background:#0E1A2B}
+  .field.oil input{color:var(--oil);background:#0E1A2B}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .divider{height:1px;background:var(--line);margin:16px 0}
+  .grouplabel{font-size:11px;letter-spacing:1.4px;font-weight:700;color:var(--ink-dim);
+    text-transform:uppercase;margin-bottom:11px;display:flex;align-items:center;gap:8px}
+  .grouplabel::before{content:"";width:3px;height:12px;background:var(--egt);border-radius:2px}
+  .grouplabel .tag{font-size:9.5px;letter-spacing:.6px;color:#63799A;text-transform:none;font-weight:600}
+
+  .btnrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+  button{
+    background:#1C2B44;border:1px solid var(--line);color:var(--ink);
+    padding:9px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;transition:.15s;
+    font-family:inherit;
+  }
+  button:hover{background:#24374F;border-color:var(--n1)}
+  button.primary{background:var(--n1);color:#0B1220;border-color:var(--n1)}
+  button.primary:hover{background:#6BBAF0}
+  .cases{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .cases button{padding:6px 8px;font-size:11px;flex:1 1 28%}
+
+  /* ---------- 판정 배너 ---------- */
+  .verdict{
+    border-radius:10px;padding:18px 20px;margin-bottom:16px;
+    border:1px solid var(--line);display:flex;align-items:center;gap:18px;
+    transition:.25s;
+  }
+  .verdict .big{
+    font-size:30px;font-weight:800;letter-spacing:2px;padding:10px 18px;border-radius:8px;
+    min-width:110px;text-align:center;
+  }
+  .verdict .msg{font-size:14px;line-height:1.65}
+  .verdict .msg b{font-size:16px}
+  .v-ok{background:rgba(46,204,113,.08);border-color:rgba(46,204,113,.4)}
+  .v-ok .big{background:var(--ok);color:#062B16}
+  .v-caution{background:rgba(241,196,15,.08);border-color:rgba(241,196,15,.45)}
+  .v-caution .big{background:var(--caution);color:#3B2F00}
+  .v-warn{background:rgba(231,76,60,.10);border-color:rgba(231,76,60,.5)}
+  .v-warn .big{background:var(--warn);color:#fff;animation:blink 1.1s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.55}}
+  .verdict .confirm{font-size:12px;margin-top:7px;padding-top:7px;border-top:1px dashed rgba(143,163,191,.3);color:var(--ink-dim)}
+  .verdict .confirm b{font-size:12.5px}
+
+  /* ---------- 스펙트럼 ---------- */
+  .spec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .legend{display:flex;gap:12px;font-size:11px;color:var(--ink-dim);flex-wrap:wrap}
+  .legend i{display:inline-block;width:16px;height:2px;margin-right:5px;vertical-align:middle}
+  svg{width:100%;height:auto;display:block}
+  .spec-note{font-size:11.5px;color:var(--ink-dim);margin-top:8px;text-align:center}
+
+  /* ---------- 결과 표 ---------- */
+  .res{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+  @media(max-width:760px){.res{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid rgba(37,52,79,.7)}
+  th{color:var(--ink-dim);font-weight:600;font-size:11.5px;letter-spacing:.4px;width:42%}
+  td{font-weight:600;font-variant-numeric:tabular-nums}
+  tr.match td{color:var(--caution)}
+  tr.match th{color:var(--caution)}
+  tr.match{background:rgba(241,196,15,.07)}
+
+  /* ---------- 동반신호 확증 ---------- */
+  .acc-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.acc-grid{grid-template-columns:1fr}}
+  .gauge{border:1px solid var(--line);border-radius:9px;padding:14px;background:rgba(10,18,32,.5)}
+  .gauge .gtop{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+  .gauge .gname{font-size:12.5px;color:var(--ink-dim);font-weight:600}
+  .gauge .gval{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .gauge .gsub{font-size:10.5px;color:#63799A;margin-bottom:11px}
+  .badge{padding:2px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap}
+  .b-ok{background:rgba(46,204,113,.18);color:var(--ok)}
+  .b-caution{background:rgba(241,196,15,.18);color:var(--caution)}
+  .b-warn{background:rgba(231,76,60,.2);color:var(--warn)}
+  .gauge .ginterp{font-size:11.5px;color:var(--ink-dim);line-height:1.55;margin-top:11px;
+    padding-top:10px;border-top:1px dashed rgba(37,52,79,.9)}
+  .acc-note{margin-top:14px;padding:13px 15px;border-radius:8px;font-size:13px;line-height:1.65;
+    background:rgba(78,168,232,.06);border:1px solid rgba(78,168,232,.25)}
+  .acc-note .lead{font-weight:700;letter-spacing:.4px;display:inline-flex;align-items:center;gap:7px;margin-bottom:5px}
+  .acc-note .lead .dot{width:8px;height:8px;border-radius:50%}
+  .acc-rule{font-size:11px;color:#63799A;margin-top:9px;font-style:normal}
+
+  .action-list{list-style:none}
+  .action-list li{
+    padding:9px 0 9px 26px;position:relative;font-size:13.5px;line-height:1.55;
+    border-bottom:1px dashed rgba(37,52,79,.8);
+  }
+  .action-list li:last-child{border:none}
+  .action-list li::before{
+    content:attr(data-n);position:absolute;left:0;top:9px;
+    width:18px;height:18px;border-radius:50%;background:var(--n1);color:#0B1220;
+    font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;
+  }
+
+  /* ---------- 근거 ---------- */
+  details{margin-top:16px;border:1px solid var(--line);border-radius:8px;background:rgba(10,18,32,.5)}
+  summary{padding:11px 14px;cursor:pointer;font-size:12.5px;color:var(--ink-dim);font-weight:600;
+    list-style:none;display:flex;justify-content:space-between}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"▾";transition:.2s}
+  details[open] summary::after{transform:rotate(180deg)}
+  .ref{padding:0 14px 14px;font-size:12px;color:var(--ink-dim);line-height:1.85}
+  .ref code{background:#0A1220;padding:2px 6px;border-radius:4px;color:var(--n1);
+    font-family:ui-monospace,monospace;font-size:11.5px}
+
+  /* ---------- 잔존수명(RUL) ---------- */
+  .rul-grid{display:grid;grid-template-columns:290px 1fr;gap:18px;align-items:start}
+  @media(max-width:760px){.rul-grid{grid-template-columns:1fr}}
+  .field textarea{
+    width:100%;background:#0A1220;border:1px solid var(--line);border-radius:6px;resize:vertical;
+    color:#FFF;padding:9px 11px;font-size:13.5px;line-height:1.55;outline:none;
+    font-family:ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums;
+  }
+  .field textarea:focus{border-color:var(--n1);box-shadow:0 0 0 3px rgba(78,168,232,.15)}
+  .rul-out{min-width:0}
+  .howto{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+  @media(max-width:760px){.howto{grid-template-columns:1fr 1fr}}
+  .howto>div{display:flex;gap:9px;padding:10px 11px;border:1px solid var(--line);border-radius:8px;
+    background:rgba(10,18,32,.5);font-size:11.5px;line-height:1.55;color:var(--ink-dim)}
+  .howto span b{color:var(--ink)}
+  .howto>div>b{flex:none;width:19px;height:19px;border-radius:50%;background:var(--n1);color:#0B1220;
+    font-size:11px;display:flex;align-items:center;justify-content:center}
+  .howto em{display:block;font-style:normal;font-weight:700;color:var(--ink);font-size:12px;margin-bottom:2px}
+  .howto u{text-decoration:none;font-weight:700;color:var(--ink)}
+  .trend-note{font-size:12.5px;line-height:1.6;margin-bottom:10px;padding:9px 11px;border-radius:7px;
+    border-left:3px solid var(--n1);background:rgba(78,168,232,.06)}
+  .rul-big{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:14px 16px;border-radius:9px;
+    border:1px solid var(--line);background:rgba(10,18,32,.5)}
+  .rul-big .num{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+  .rul-big .unit{font-size:13px;color:var(--ink-dim);font-weight:600}
+  .rul-big .range{font-size:12.5px;color:var(--ink-dim)}
+  .rul-dec{margin-top:10px;padding:12px 15px;border-radius:8px;font-size:13px;line-height:1.65;
+    background:rgba(78,168,232,.06);border:1px solid rgba(78,168,232,.25)}
+  .rul-warn{margin-top:8px;font-size:12px;color:var(--caution);line-height:1.6}
+  .rul-out table{margin-top:10px}
+  .rul-out table th{width:auto}
+
+  /* ---------- 기록 로그 ---------- */
+  .log{margin-top:18px}
+  .log table td,.log table th{font-size:12px;padding:7px 8px}
+  .log th{width:auto}
+  .empty{color:#4E5F7A;font-size:12.5px;text-align:center;padding:22px 0}
+  footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--line);
+    color:#4E5F7A;font-size:11.5px;line-height:1.8}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <h1><span class="chip">EVMS</span> B747 엔진 진동 예지진단 시스템</h1>
+      <p>GE CF6-80C2 · 진동(1차) + 동반신호(EGT·오일압력) 다변량 확증 진단 + 진동 추세 기반 잔존수명(RUL) 추정 &nbsp;|&nbsp; 2026 교사연구회 「가온 AI 에듀랩」</p>
+    </div>
+    <div class="status-led"><span class="led"></span><span id="clock">SYSTEM READY</span></div>
+  </header>
+
+  <div class="grid">
+
+    <!-- ============ 입력 ============ -->
+    <div class="card">
+      <h2>① 입력값</h2>
+
+      <div class="field">
+        <label>엔진 기종</label>
+        <select id="model" onchange="applyModel()">
+          <option value="cf6">GE CF6-80C2 (B747-400)</option>
+          <option value="custom">직접 입력 (타 기종)</option>
+        </select>
+      </div>
+
+      <div class="two">
+        <div class="field n1">
+          <label>N1 회전수 <span class="hint">RPM</span></label>
+          <input id="n1" type="number" value="3300" oninput="diagnose()">
+        </div>
+        <div class="field n2">
+          <label>N2 회전수 <span class="hint">RPM</span></label>
+          <input id="n2" type="number" value="9900" oninput="diagnose()">
+        </div>
+      </div>
+
+      <div class="two">
+        <div class="field">
+          <label>팬 블레이드 수 <span class="hint">매</span></label>
+          <input id="blades" type="number" value="38" oninput="diagnose()">
+        </div>
+        <div class="field">
+          <label>정상범주 한계 <span class="hint">IPS</span></label>
+          <input id="limit" type="number" step="0.05" value="0.60" oninput="diagnose()">
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="grouplabel" style="--x:0"><span style="width:3px;height:12px;background:var(--n1);border-radius:2px;display:inline-block"></span>1차 신호 · 진동 <span class="tag">먼저 판정한다</span></div>
+
+      <div class="field meas">
+        <label>측정 피크 진폭 <span class="hint">IPS (peak)</span></label>
+        <input id="amp" type="number" step="0.01" value="0.52" oninput="diagnose()">
+      </div>
+      <div class="field meas">
+        <label>측정 피크 주파수 <span class="hint">Hz · FFT 봉우리 위치</span></label>
+        <input id="freq" type="number" value="165" oninput="diagnose()">
+      </div>
+      <div class="field">
+        <label>주파수 매칭 허용오차 <span class="hint">%</span></label>
+        <input id="tol" type="number" value="5" oninput="diagnose()">
+      </div>
+
+      <div class="divider"></div>
+      <div class="grouplabel">동반신호 · EGT · 오일압력 <span class="tag">나중에 확증한다</span></div>
+
+      <div class="field egt">
+        <label>배기가스온도 EGT <span class="hint">°C</span></label>
+        <input id="egt" type="number" value="905" oninput="diagnose()">
+      </div>
+      <div class="field oil">
+        <label>오일압력 <span class="hint">kPa · differential</span></label>
+        <input id="oil" type="number" value="330" oninput="diagnose()">
+      </div>
+
+      <div class="divider"></div>
+      <div class="btnrow">
+        <button class="primary" onclick="record()">진단 기록 저장</button>
+        <button onclick="clearLog()">기록 지우기</button>
+      </div>
+
+      <div class="divider"></div>
+      <label style="font-size:12px;color:var(--ink-dim);display:block;margin-bottom:7px">실습 데이터 카드 불러오기 <span style="color:#63799A;font-size:10.5px">· 활동지 사례와 동일</span></label>
+      <div class="cases">
+        <button onclick="load(0.15,45,780,350,1)">사례 1</button>
+        <button onclick="load(0.75,55,800,340,2)">사례 2</button>
+        <button onclick="load(0.52,165,905,330,3)">사례 3</button>
+        <button onclick="load(0.68,3820,810,85,4)">사례 4</button>
+        <button onclick="load(0.47,2090,865,345,5)">사례 5</button>
+      </div>
+    </div>
+
+    <!-- ============ 결과 ============ -->
+    <div>
+      <div class="verdict" id="verdict">
+        <div class="big" id="v-big">경고</div>
+        <div class="msg" id="v-msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="spec-head">
+          <h2 style="margin:0">② FFT 스펙트럼 — 측정 피크는 어느 기준선 위에 섰는가</h2>
+          <div class="legend">
+            <span><i style="background:var(--n1)"></i>N1 계통</span>
+            <span><i style="background:var(--n2)"></i>N2 계통</span>
+            <span><i style="background:var(--warn);height:2px;border-top:2px dashed var(--warn)"></i>한계선</span>
+          </div>
+        </div>
+        <svg id="spec" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="spec-note">가로축은 주파수(Hz) — 로그 스케일. 세로 점선이 계산된 <b>기준 주파수</b>, 굵은 막대가 <b>측정 피크</b>다.</div>
+      </div>
+
+      <div class="res">
+        <div class="card">
+          <h2>③ 기준 주파수 (자동 계산)</h2>
+          <table id="reftable"></table>
+        </div>
+        <div class="card">
+          <h2>④ 진동 판정 결과</h2>
+          <table id="verdicttable"></table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <h2 style="--x:0"><span></span>⑤ 동반신호 — EGT · 오일압력 다변량 확증</h2>
+        <div class="acc-grid">
+          <div class="gauge" id="g-egt"></div>
+          <div class="gauge" id="g-oil"></div>
+        </div>
+        <div class="acc-note" id="accNote"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <h2>⑥ 추천 정비 작업 — 순서대로 수행</h2>
+        <ul class="action-list" id="actions"></ul>
+        <details>
+          <summary><span>▸ 이 판정의 근거 (교사용 · 설명회용)</span></summary>
+          <div class="ref" id="refbox"></div>
+        </details>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <h2>⑦ 잔존수명(RUL) 추정 — 진동 추세를 한계선까지 연장한다</h2>
+        <div class="howto">
+          <div><b>1</b><span><em>진동 추세 데이터</em>같은 엔진을 정비 때마다 잰 기록. 「운용시간, 진폭」 한 줄이 측정 한 번이다.</span></div>
+          <div><b>2</b><span><em>추세선 긋기</em><u>선형</u>은 같은 <u>양</u>씩 커진다고 본다(100시간마다 +0.03). <u>지수</u>는 같은 <u>비율</u>로 커진다고 본다(100시간마다 +10%) — 손상이 손상을 키울 때.</span></div>
+          <div><b>3</b><span><em>연장해서 읽기</em>추세선을 앞으로 늘려 빨간 한계선에 닿는 지점까지의 거리가 <b>RUL(잔존수명)</b>이다.</span></div>
+          <div><b>4</b><span><em>정비 시점 결정</em>점들이 흩어진 만큼 오차범위를 두고, 가장 이른 값에서 안전 여유를 더 빼서 정비 시점을 정한다.</span></div>
+        </div>
+        <svg id="rulchart" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="legend" style="margin:6px 0 16px">
+          <span><i style="background:var(--n1)"></i>선형 추세</span>
+          <span><i style="background:var(--n2)"></i>지수 추세</span>
+          <span><i style="background:var(--caution)"></i>P점 · 주의 0.40</span>
+          <span><i style="background:var(--warn)"></i>F 기준 · 한계 L</span>
+          <span><i style="background:#FFF"></i>측정점 · RUL 화살표</span>
+        </div>
+        <div class="rul-grid">
+          <div>
+            <div class="trend-note" id="trendNote"></div>
+            <div class="field">
+              <label>진동 추세 데이터 <span class="hint">한 줄에 「운용시간(FH), 진폭(IPS)」</span></label>
+              <textarea id="trend" rows="9" oninput="rul()" spellcheck="false"></textarea>
+            </div>
+            <div class="two">
+              <div class="field">
+                <label>이번 측정 시점 <span class="hint">FH</span></label>
+                <input id="tnow" type="number" value="1200">
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button style="width:100%;padding:10px 6px" onclick="addPoint()">① 진폭을 기록에 추가</button>
+              </div>
+            </div>
+            <div class="two">
+              <div class="field">
+                <label>추세 모델</label>
+                <select id="rmodel" onchange="rul()">
+                  <option value="auto">자동 (짧은 쪽)</option>
+                  <option value="lin">선형</option>
+                  <option value="exp">지수</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>안전 여유 <span class="hint">%</span></label>
+                <input id="margin" type="number" value="20" oninput="rul()">
+              </div>
+            </div>
+            <div style="font-size:11.5px;color:#63799A;line-height:1.6">※ ①의 [사례 1~5]를 누르면 그 엔진의 과거 진동 기록이 여기에 함께 불러와진다. 숫자를 직접 고치면 결과가 바로 바뀐다.</div>
+          </div>
+          <div class="rul-out" id="rulOut"></div>
+        </div>
+        <details>
+          <summary><span>▸ RUL 추정의 근거와 한계 (교사용 · 설명회용)</span></summary>
+          <div class="ref">
+            <p style="margin-bottom:8px"><b>무엇을 계산하나</b> — 운용시간별 진동 진폭에 추세선을 맞춘 뒤, 그 선을 앞으로 연장해 <b>한계 L에 닿는 시점</b>을 찾는다. RUL = 한계 도달 시점 − 현재 시점. 교재 [그림 10] P–F 곡선의 'P와 F 사이에 남은 시간'을 숫자로 읽는 것이다.</p>
+            <p style="margin-bottom:8px"><b>두 가지 추세선</b> — 선형 <code>A = a + b·t</code>, 지수 <code>A = a·e^(b·t)</code> (ln A에 직선을 맞춤). 균열·박리처럼 손상이 손상을 키우는 열화는 끝으로 갈수록 가속되므로, 직선은 RUL을 <b>낙관적으로(길게)</b> 잡기 쉽다. 그래서 '자동'은 두 모델 중 <b>RUL이 짧은 쪽</b>을 채택한다.</p>
+            <p style="margin-bottom:8px"><b>오차와 안전 여유</b> — 추세선에서 실제 점들이 흩어진 정도(잔차 표준편차 σ)로 <code>추세선 ± 2σ</code> 띠를 그려 RUL 범위를 낸다(간이 추정). 정비 권장 시점 = <code>RUL 하한 × (1 − 안전 여유)</code>. 최종보고서 A단계의 '예측값 + 오차 + 안전 여유로 정비 시점 결정'을 그대로 옮긴 것이다.</p>
+            <p style="margin-bottom:8px"><b>근거</b> — ISO 13381-1(기계 상태감시·진단 — 예지(Prognostics) 일반 지침): 상태 지표의 추세를 경보·한계값까지 외삽해 잔존수명을 추정하는 방식. P–F 곡선: SAE JA1011/JA1012(RCM).</p>
+            <p><b>한계</b> — ① 데이터 범위보다 먼 미래를 외삽할수록 불확실하다. ② 실제 항공사의 엔진 진동 추세 데이터와 운용 한계는 OEM 비공개이므로, 사례 데이터는 <b>교육용 가상 시나리오</b>다. ③ NASA C-MAPSS에는 진동 채널이 없다 — C-MAPSS로 하는 머신러닝 RUL 예측(Orange 3·Python, 5~6차시)과, 이 패널의 '진동 추세 외삽'은 서로 다른 방법이며 함께 비교해 볼 수 있다.</p>
+          </div>
+        </details>
+      </div>
+
+      <div class="card log">
+        <h2>⑧ 실습 기록표 <span style="font-weight:400;letter-spacing:0;text-transform:none;color:#4E5F7A">— 저장한 진단이 여기에 쌓입니다</span></h2>
+        <table id="logtable"></table>
+        <button style="margin-top:12px;width:100%" onclick="exportCSV()">기록표 CSV로 내려받기 (엑셀에서 열기)</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    본 도구의 진동한계 수치는 ISO 10816-3 / 20816-3 기반 <b>지상 진단 실습용</b>이며, 실제 항공기 운용 한계(OEM 비공개)와 다를 수 있다.<br>
+    동반신호 기준치 출처: <b>EASA TCDS IM.E.240 (GE CF6-80 series, Issue 02, 2024-07-23)</b> — EGT 최대연속 925°C(Sec.IV-1.2), 오일압력 아이들 최소 65.5 kPa diff(Sec.IV-2.2), 회전속도 한계 N1 117.5%=3,854 / N2 112.5%=11,055 RPM(Sec.IV-3). 실습 경고선은 이 한계에 여유를 둔 교육용 값이다.<br>
+    엔진 특성값 출처: GE Aerospace CF6-80C2 데이터시트 · GKN Aerospace 팬블레이드 자료(GE 엔진매뉴얼 72-21-01 인용, 38매) · NASA C-MAPSS 열화 데이터셋(다변량 상태감시 근거).<br>
+    잔존수명(RUL) 추정 근거: ISO 13381-1(상태감시·진단 — 예지 일반 지침, 추세 외삽법) · SAE JA1011/JA1012(P–F 곡선). 추세 사례 데이터는 교육용 가상 시나리오이며, 추정값은 정비 인가 근거가 아니다.<br>
+    2026 교사연구회 「가온 AI 에듀랩」 · 디지털 트윈 기반 항공기 엔진 예지정비(PdM) 교수·학습 콘텐츠
+  </footer>
+</div>
+
+<script>
+/* ---------- 기종 프리셋 ---------- */
+const MODELS = { cf6:{n1:3300,n2:9900,blades:38} };
+function applyModel(){
+  const m = document.getElementById('model').value;
+  if(MODELS[m]){
+    n1.value = MODELS[m].n1; n2.value = MODELS[m].n2; blades.value = MODELS[m].blades;
+  }
+  diagnose();
+}
+const $ = id => document.getElementById(id);
+function load(a,f,e,o,k){
+  $('amp').value=a; $('freq').value=f; $('egt').value=e; $('oil').value=o;
+  if(k) loadTrend(k);   // 사례마다 그 엔진의 과거 진동 기록도 함께 불러온다
+  diagnose();
+}
+
+/* ---------- 부위·조치 지식베이스 ---------- */
+/* expect: 이 고장에서 동반신호가 어떻게 움직여야 진단이 확증되는가 */
+const KB = {
+  '1×N1': {
+    part:'팬 / LP 로터 불균형 · #1 베어링',
+    why:'무게중심이 회전축에서 어긋나면 원심력 F = m·r·ω² 가 한 바퀴에 한 번 같은 방향으로 작용한다. 그래서 진동 주파수가 회전수와 똑같아진다(1×).',
+    expect:'순수 기계적 불균형이라면 열역학·윤활에는 이상이 없다 → <b>EGT·오일압력 모두 정상</b>이어야 진단이 확증된다.',
+    actions:[
+      'FOD 검사 — 팬 블레이드 앞전의 이물질·결빙·오염물 제거',
+      '팬 트림 밸런싱 — 진동 위상으로 무거운 쪽(heavy spot)을 찾아, 그 반대편 스피너 볼트 홀에 밸런스 웨이트를 부착',
+      '밸런싱 후에도 진폭이 남으면 → #1 베어링 상태 점검으로 확대'
+    ],
+    ref:'ISO 20816 및 회전기계 진동진단 통칙: 1× 성분 우세 = 질량 불균형. CF6 계열 팬 트림 밸런싱은 정비매뉴얼(AMM) 71-00 / 엔진매뉴얼 72-21 계열 절차를 따른다.'
+  },
+  '2×N1': {
+    part:'LP 축 정렬불량 · 커플링',
+    why:'두 축의 중심선이 어긋나면 한 바퀴에 힘이 두 번 작용한다 → 회전수의 2배 주파수. 축방향(axial) 성분이 함께 커지는 것이 특징이다.',
+    expect:'정렬불량 역시 기계적 결함 → <b>EGT·오일압력 모두 정상</b>이면 열·윤활 손상 없이 정렬 문제로 좁혀진다.',
+    actions:[
+      '엔진 마운트·구조 체결 상태 점검, 케이스 변형 여부 확인',
+      'LP 축·커플링 정렬 점검 및 조정',
+      '체결부 토크 재확인 — 풀림이 있으면 밸런싱보다 풀림 해소가 먼저'
+    ],
+    ref:'ISO 20816 / 회전기계 진동진단 통칙: 2× 우세 + 축방향 성분 증가 = 정렬불량(misalignment).'
+  },
+  '1×N2': {
+    part:'HP 로터 불균형 (HPC/HPT) · #3·4 베어링',
+    why:'고압 로터가 불균형이면 N2 회전수와 같은 주파수에서 진동이 커진다. N2는 N1보다 3배가량 빨라 같은 불균형이라도 원심력(ω²)이 훨씬 커진다.',
+    expect:'HP 로터 손상은 압축기 효율을 떨어뜨린다 → 같은 추력에 연료를 더 태워 <b>EGT가 상승</b>하면 진단이 확증된다. 오일압력 저하까지 겹치면 베어링 손상 동반을 의심.',
+    actions:[
+      'HP 로터 밸런스 상태 점검 — 코어 진동 추세 확인',
+      '#3·#4 베어링 상태 점검 (오일 필터·칩 디텍터 확인)',
+      'EGT·연료유량 동반 상승 여부 교차 확인 → 압축기 효율 저하 동반 시 샵 비짓 검토'
+    ],
+    ref:'다변량 상태감시: 진동 이상은 EGT·연료유량 상승과 동반되는 경우가 많다(NASA C-MAPSS 등 열화 데이터셋의 대표 패턴). EGT 한계는 EASA TCDS IM.E.240 Sec.IV-1.2(최대연속 925°C).'
+  },
+  '2×N2': {
+    part:'HP 축 정렬불량',
+    why:'고압 축 계통의 중심선 어긋남 → N2 회전수의 2배 주파수.',
+    expect:'기계적 정렬 문제 → <b>EGT·오일압력 정상</b>이면 열·윤활 손상 없이 정렬 문제로 좁혀진다.',
+    actions:[
+      'HP 축 정렬 점검',
+      '케이스·마운트 체결 상태 및 열변형 여부 확인',
+      '지속 시 코어 정밀검사(샵 비짓) 검토'
+    ],
+    ref:'ISO 20816 / 회전기계 진동진단 통칙: 2× 성분 = 정렬불량.'
+  },
+  'BPF': {
+    part:'팬 블레이드 개별 손상 (FOD)',
+    why:'손상된 블레이드가 정지 구조물(스테이터) 앞을 지날 때마다 충격이 발생한다. 한 바퀴에 블레이드 수만큼 반복되므로 BPF = 블레이드 수 × 회전주파수.',
+    expect:'손상 블레이드는 공력 효율을 떨어뜨린다 → <b>EGT가 소폭 상승</b>하면 진단이 확증된다. 오일압력은 정상이면 베어링 문제는 아님.',
+    actions:[
+      '보어스코프 검사 — 블레이드 앞전·뒷전의 흠집(nick)·찍힘(dent)·균열(crack) 확인',
+      '블렌드 리페어 — 손상이 정비매뉴얼 허용 한계 이내면 매끄럽게 다듬어 응력 집중 제거',
+      '한계 초과 시 블레이드 교환 — 모멘트 웨이트가 맞는 블레이드로 교체 후 재밸런싱',
+      '교환·블렌드 후 팬 트림 밸런싱으로 마무리'
+    ],
+    ref:'BPF = Z × N/60 (Z=블레이드 수). CF6-80C2 팬은 솔리드 티타늄 38매 (GKN Aerospace 자료, GE 엔진매뉴얼 72-21-01 인용). 블렌드 허용 한계는 AMM/EM의 손상 허용치(damage limits) 표를 따른다.'
+  },
+  'ASYNC': {
+    part:'베어링 결함 의심 (BPFO / BPFI)',
+    why:'구름면의 국부 박리(spall)를 볼이 때릴 때 충격이 발생한다. 이 반복 간격은 베어링 기하학(볼 개수·피치경·접촉각)으로 정해지므로 회전수의 정수배가 되지 않는다.',
+    expect:'베어링이 손상되면 윤활 통로가 손상·누설될 수 있다 → <b>오일압력 저하</b>가 진단을 강하게 뒷받침한다. EGT는 정상이면 열역학적 문제는 아님.',
+    actions:[
+      '오일 점검 — 칩 디텍터 및 오일 분광분석(SOAP)으로 금속 분말 확인',
+      '엔벨로프(포락선) 분석 — BPFO/BPFI를 계산해 어느 베어링, 어느 면(내륜/외륜/볼)인지 특정',
+      '베어링 교환 검토 — 통상 엔진 분해(샵 비짓)가 필요한 중정비 항목',
+      '교환 전까지 진동 추세를 짧은 주기로 재측정'
+    ],
+    ref:'베어링 결함 주파수(BPFO/BPFI/BSF)는 회전수의 비정수배로 나타난다 — 회전기계 진동진단의 표준적 판별 기준. 확진에는 엔벨로프(포락선) 해석이 쓰인다. 오일압력 한계는 EASA TCDS IM.E.240 Sec.IV-2.2.'
+  }
+};
+
+/* ---------- 동반신호 기준 (EASA TCDS IM.E.240) ---------- */
+const RANK = {'정상':0,'주의':1,'경고':2};
+const SEVCLS = {'정상':'ok','주의':'caution','경고':'warn'};
+function egtStatus(e){
+  if(e < 850)  return {sev:'정상', cls:'ok',      note:'정상(<850°C) — 열역학적 효율 저하는 동반되지 않음. 순수 기계적 문제 가능성을 지지.'};
+  if(e <= 925) return {sev:'주의', cls:'caution', note:'상승 구간(850~925°C) — 효율 저하로 연료를 더 태우는 정황. HP 로터·블레이드 효율 저하 고장을 뒷받침.'};
+  return           {sev:'경고', cls:'warn',    note:'최대연속 한계(925°C) 초과 — 압축기·터빈 효율 저하 또는 연소 이상이 진동과 함께 진행 중일 수 있음.'};
+}
+function oilStatus(o){
+  if(o >= 200) return {sev:'정상', cls:'ok',      note:'정상(≥200 kPa) — 베어링·윤활계통 손상은 동반되지 않음.'};
+  if(o >= 100) return {sev:'주의', cls:'caution', note:'다소 낮음(100~200 kPa) — 윤활계통 추세 감시 필요.'};
+  return           {sev:'경고', cls:'warn',    note:'경고(<100 kPa) — 윤활 통로 손상·누설 가능성. 베어링 결함 진단을 강하게 뒷받침. 즉시 조치.'};
+}
+
+/* ---------- 진단 로직 ---------- */
+let S = {};
+function diagnose(){
+  const N1=+$('n1').value, N2=+$('n2').value, Z=+$('blades').value;
+  const A=+$('amp').value, F=+$('freq').value, L=+$('limit').value, T=+$('tol').value/100;
+  const E=+$('egt').value, O=+$('oil').value;
+
+  const refs = [
+    {key:'1×N1', hz:N1/60,     label:'1× N1 (팬 회전주파수)', sys:'n1'},
+    {key:'2×N1', hz:2*N1/60,   label:'2× N1',                 sys:'n1'},
+    {key:'1×N2', hz:N2/60,     label:'1× N2 (HP 회전주파수)', sys:'n2'},
+    {key:'2×N2', hz:2*N2/60,   label:'2× N2',                 sys:'n2'},
+    {key:'BPF',  hz:Z*N1/60,   label:`BPF (블레이드 통과 · ${Z}매)`, sys:'n1'},
+  ];
+
+  // 진동 심각도: 0.40 미만=정상 / 0.40~한계=주의 / 한계 초과=경고
+  const CAUTION = 0.40;
+  let sev, cls;
+  if(A < CAUTION){ sev='정상'; cls='ok'; }
+  else if(A <= L){ sev='주의'; cls='caution'; }
+  else { sev='경고'; cls='warn'; }
+
+  // 주파수 매칭 (BPF 우선)
+  const order = ['BPF','2×N2','1×N2','2×N1','1×N1'];
+  let match = 'ASYNC', matchKey = null;
+  for(const k of order){
+    const r = refs.find(x=>x.key===k);
+    if(r && r.hz>0 && Math.abs(F - r.hz)/r.hz <= T){ match=k; matchKey=k; break; }
+  }
+  const kb = KB[match];
+  const urgency = sev==='정상' ? '조치 불필요 — 추세 모니터링'
+               : sev==='주의' ? '한계 근접 — 점검 계획 수립'
+               : '즉시 점검 / 정비';
+
+  // 동반신호
+  const egt = egtStatus(E), oil = oilStatus(O);
+  const accWorst = Math.max(RANK[egt.sev], RANK[oil.sev]);
+  const accWorstSev = Object.keys(RANK).find(k=>RANK[k]===accWorst);
+  const escalate = accWorst > RANK[sev]; // 동반신호가 진동보다 심각
+
+  S = {N1,N2,Z,A,F,L,E,O,refs,sev,cls,match,matchKey,kb,urgency,egt,oil,accWorstSev,escalate};
+  render();
+  rul();   // 한계 L이 바뀌면 RUL도 다시 계산
+}
+
+function render(){
+  const {A,F,L,E,O,refs,sev,cls,match,matchKey,kb,urgency,egt,oil,accWorstSev,escalate} = S;
+
+  // 배너
+  const v = $('verdict');
+  v.className = 'verdict v-'+cls;
+  $('v-big').textContent = sev;
+  const accSummary = `EGT <b style="color:var(--${egt.cls==='ok'?'ok':egt.cls==='caution'?'caution':'warn'})">${egt.sev}</b> · 오일압력 <b style="color:var(--${oil.cls==='ok'?'ok':oil.cls==='caution'?'caution':'warn'})">${oil.sev}</b>`;
+  const confirmLine = escalate
+    ? `<div class="confirm">⚠ 동반신호(${accSummary})가 진동 판정(${sev})보다 심각 — <b>한 단계 높은 시급도</b>로 대응 권고.</div>`
+    : `<div class="confirm">동반신호 ${accSummary} — ${sev==='정상' && accWorstSev==='정상' ? '세 신호 모두 정상.' : '아래 ⑤에서 진동 진단과의 부합 여부를 확인하라.'}</div>`;
+  $('v-msg').innerHTML = ((sev==='정상')
+    ? `측정 진폭 <b>${A.toFixed(2)} IPS</b> — 한계 ${L.toFixed(2)} IPS 이내.<br>${urgency}`
+    : `측정 진폭 <b>${A.toFixed(2)} IPS</b> / 한계 ${L.toFixed(2)} IPS &nbsp;·&nbsp; 피크 <b>${F.toLocaleString()} Hz</b> → <b>${match==='ASYNC'?'비동기 (정수배 아님)':match}</b><br>
+       추정 부위: <b>${kb.part}</b> &nbsp;·&nbsp; ${urgency}`) + confirmLine;
+
+  // 기준 주파수 표
+  $('reftable').innerHTML = refs.map(r=>`
+    <tr class="${r.key===matchKey?'match':''}">
+      <th>${r.label}</th>
+      <td style="color:${r.key===matchKey?'var(--caution)':(r.sys==='n1'?'var(--n1)':'var(--n2)')}">
+        ${r.hz.toFixed(1)} Hz ${r.key===matchKey?' ◀ 일치':''}
+      </td>
+    </tr>`).join('');
+
+  // 판정 표
+  $('verdicttable').innerHTML = `
+    <tr><th>진동 심각도</th><td style="color:var(--${cls==='ok'?'ok':cls==='caution'?'caution':'warn'})">${sev}</td></tr>
+    <tr><th>측정 주파수 매칭</th><td>${match==='ASYNC'?'비동기 (정수배 아님)':match}</td></tr>
+    <tr><th>추정 고장 부위</th><td>${kb.part}</td></tr>
+    <tr><th>조치 시급도</th><td>${urgency}</td></tr>`;
+
+  // ⑤ 동반신호 게이지
+  $('g-egt').innerHTML = gauge('EGT (배기가스온도)', E, '°C', egt, 700, 1000,
+      [{to:850,cls:'ok'},{to:925,cls:'caution'},{to:1000,cls:'warn'}], '정상 <850 · 주의 850~925 · 경고 >925');
+  $('g-oil').innerHTML = gauge('오일압력', O, ' kPa', oil, 0, 400,
+      [{to:100,cls:'warn'},{to:200,cls:'caution'},{to:400,cls:'ok'}], '경고 <100 · 주의 100~200 · 정상 ≥200');
+
+  // ⑤ 동반신호 종합 해석
+  const dotCol = escalate ? 'var(--warn)' : (RANK[sev]>0 ? (matchKey?'var(--n1)':'var(--caution)') : 'var(--ok)');
+  let head, body;
+  if(sev==='정상' && accWorstSev==='정상'){
+    head='이상 없음 — 세 신호 모두 정상';
+    body='진동·EGT·오일압력이 모두 정상 범위다. 조치는 불필요하며, 다음 점검 주기까지 세 신호의 <b>추세(trend)</b>를 함께 기록한다.';
+  } else if(sev==='정상' && accWorstSev!=='정상'){
+    head='진동 정상 · 동반신호 이상 — 교차 점검 필요';
+    body=`진동은 정상이나 ${accWorstSev==='경고'?'동반신호에 경고':'동반신호에 주의'}가 있다. 동반신호만으로는 부위를 특정할 수 없으므로(단독 판정 금지), 진동 외 열역학·윤활 계통을 별도로 점검한다.`;
+  } else {
+    head=`동반신호로 "${kb.part.split(' · ')[0]}" 진단을 확증`;
+    body=`${kb.expect}<br>현재 측정: EGT ${egt.note.replace(/^[^—]*—\s*/,'')} · 오일압력 ${oil.note.replace(/^[^—]*—\s*/,'')}`;
+    if(escalate) body += `<br><b style="color:var(--warn)">동반신호가 진동 판정보다 심각하므로 한 단계 높은 시급도로 대응한다.</b>`;
+  }
+  $('accNote').innerHTML =
+    `<div class="lead"><span class="dot" style="background:${dotCol}"></span>${head}</div>
+     <div>${body}</div>
+     <div class="acc-rule">※ 판정 순서 — <b>진동으로 먼저 판단하고, EGT·오일압력으로 나중에 확인한다.</b> 동반신호만으로 단독 판정하지 않는다. 기준치 출처: EASA TCDS IM.E.240(EGT 925°C, 오일 65.5 kPa diff 최소).</div>`;
+
+  // ⑥ 조치
+  $('actions').innerHTML = (sev==='정상')
+    ? `<li data-n="✓">현재 조치 불필요. 다음 점검 주기까지 <b>진동·EGT·오일압력 추세(trend)</b>를 계속 기록한다.</li>
+       <li data-n="!">어느 신호든 서서히 악화되는 추세라면, 한계를 넘기 전이라도 조기 점검을 계획한다.</li>`
+    : kb.actions.map((a,i)=>`<li data-n="${i+1}">${a}</li>`).join('');
+
+  $('refbox').innerHTML = `<p style="margin-bottom:8px"><b>왜 이 주파수인가</b> — ${kb.why}</p>
+    <p style="margin-bottom:8px"><b>동반신호로 어떻게 확증하나</b> — ${kb.expect}</p>
+    <p style="margin-bottom:8px"><b>판정식</b> — 진폭: <code>A &lt; 0.40 → 정상 / 0.40 ≤ A ≤ L → 주의 / A > L → 경고</code><br>
+    주파수: <code>|F − 기준| / 기준 ≤ ${(+$('tol').value)}% → 해당 부위</code>, 어디에도 맞지 않으면 비동기 → 베어링<br>
+    동반신호: <code>EGT &lt;850 정상 / 850~925 주의 / >925 경고</code> · <code>오일압력 ≥200 정상 / 100~200 주의 / &lt;100 경고</code></p>
+    <p><b>근거</b> — ${kb.ref}</p>`;
+
+  drawSpectrum();
+}
+
+/* ---------- 동반신호 게이지 SVG ---------- */
+function gauge(name, val, unit, st, min, max, zones, sub){
+  const W=300, H=34, pad=2, bw=W-pad*2;
+  const clamp = Math.max(min, Math.min(max, val));
+  const x = pad + (clamp-min)/(max-min)*bw;
+  const colOf = c => c==='ok'?'var(--ok)':c==='caution'?'var(--caution)':'var(--warn)';
+  let seg='', prev=min;
+  for(const z of zones){
+    const x1 = pad+(prev-min)/(max-min)*bw, x2 = pad+(z.to-min)/(max-min)*bw;
+    seg += `<rect x="${x1}" y="10" width="${x2-x1}" height="12" fill="${colOf(z.cls)}" opacity=".28"/>`;
+    prev = z.to;
+  }
+  const bar = `<svg viewBox="0 0 ${W} ${H}" style="margin-top:4px">
+    ${seg}
+    <rect x="${pad}" y="10" width="${bw}" height="12" fill="none" stroke="#25344F" rx="3"/>
+    <line x1="${x}" y1="4" x2="${x}" y2="28" stroke="${colOf(st.cls)}" stroke-width="3"/>
+    <circle cx="${x}" cy="16" r="4.5" fill="${colOf(st.cls)}" stroke="#0B1220" stroke-width="1.4"/>
+  </svg>`;
+  const badgeCls = st.cls==='ok'?'b-ok':st.cls==='caution'?'b-caution':'b-warn';
+  return `
+    <div class="gtop">
+      <span class="gname">${name}</span>
+      <span class="badge ${badgeCls}">${st.sev}</span>
+    </div>
+    <div class="gval" style="color:${colOf(st.cls)}">${val.toLocaleString()}<span style="font-size:13px;color:var(--ink-dim);font-weight:600">${unit}</span></div>
+    <div class="gsub">${sub}</div>
+    ${bar}
+    <div class="ginterp">${st.note}</div>`;
+}
+
+/* ---------- 스펙트럼 SVG ---------- */
+function drawSpectrum(){
+  const {refs,A,F,L,matchKey} = S;
+  const W=900,H=300, ml=52, mr=18, mt=22, mb=42;
+  const pw=W-ml-mr, ph=H-mt-mb;
+  const fmin=20, fmax=6000;
+  const X = f => ml + (Math.log10(Math.max(f,fmin))-Math.log10(fmin))/(Math.log10(fmax)-Math.log10(fmin))*pw;
+  const amax = Math.max(1.0, A*1.25, L*1.6);
+  const Y = a => mt + ph - (a/amax)*ph;
+
+  let s = `<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="#080F1C" stroke="#25344F"/>`;
+  for(const g of [50,100,200,500,1000,2000,5000]){
+    s += `<line x1="${X(g)}" y1="${mt}" x2="${X(g)}" y2="${mt+ph}" stroke="var(--grid)"/>
+          <text x="${X(g)}" y="${mt+ph+16}" fill="#63799A" font-size="10" text-anchor="middle">${g>=1000?(g/1000)+'k':g}</text>`;
+  }
+  for(let i=0;i<=4;i++){
+    const a = amax*i/4, y=Y(a);
+    s += `<line x1="${ml}" y1="${y}" x2="${ml+pw}" y2="${y}" stroke="var(--grid)"/>
+          <text x="${ml-8}" y="${y+4}" fill="#63799A" font-size="10" text-anchor="end">${a.toFixed(1)}</text>`;
+  }
+  s += `<text x="${ml+pw/2}" y="${H-8}" fill="#8FA3BF" font-size="11" text-anchor="middle">주파수 (Hz)</text>
+        <text x="14" y="${mt+ph/2}" fill="#8FA3BF" font-size="11" text-anchor="middle" transform="rotate(-90 14 ${mt+ph/2})">진폭 (IPS)</text>`;
+
+  let path=`M ${ml} ${Y(0.02)}`;
+  for(let x=ml;x<=ml+pw;x+=6){ path += ` L ${x} ${Y(0.015+0.022*Math.abs(Math.sin(x*0.7)))}`; }
+  s += `<path d="${path}" stroke="#1F3757" fill="none" stroke-width="1"/>`;
+
+  for(const r of refs){
+    if(r.hz<fmin||r.hz>fmax) continue;
+    const c = r.sys==='n1' ? 'var(--n1)' : 'var(--n2)';
+    const hit = r.key===matchKey;
+    s += `<line x1="${X(r.hz)}" y1="${mt+6}" x2="${X(r.hz)}" y2="${mt+ph}"
+            stroke="${hit?'var(--caution)':c}" stroke-width="${hit?1.8:1}" stroke-dasharray="4 4" opacity="${hit?1:.55}"/>
+          <text x="${X(r.hz)}" y="${mt-4}" fill="${hit?'var(--caution)':c}" font-size="10"
+            text-anchor="middle" font-weight="${hit?700:400}">${r.key}</text>`;
+  }
+  s += `<line x1="${ml}" y1="${Y(L)}" x2="${ml+pw}" y2="${Y(L)}" stroke="var(--warn)" stroke-width="1.4" stroke-dasharray="7 4"/>
+        <text x="${ml+pw-4}" y="${Y(L)-6}" fill="var(--warn)" font-size="10.5" text-anchor="end">한계 ${L.toFixed(2)} IPS</text>`;
+
+  if(F>=fmin && F<=fmax){
+    const CAUTION=0.40;
+    const col = A>L ? 'var(--warn)' : (A>=CAUTION ? 'var(--caution)' : 'var(--ok)');
+    const x=X(F), y=Y(A);
+    s += `<polygon points="${x-9},${mt+ph} ${x},${y} ${x+9},${mt+ph}" fill="${col}" opacity=".35"/>
+          <line x1="${x}" y1="${mt+ph}" x2="${x}" y2="${y}" stroke="${col}" stroke-width="3.5"/>
+          <circle cx="${x}" cy="${y}" r="5.5" fill="${col}" stroke="#0B1220" stroke-width="1.6"/>
+          <text x="${x}" y="${y-12}" fill="${col}" font-size="12" font-weight="700" text-anchor="middle">
+            ${A.toFixed(2)} IPS @ ${F.toLocaleString()} Hz</text>`;
+  }
+  $('spec').innerHTML = s;
+}
+
+/* ---------- 기록표 ---------- */
+let LOG = [];
+function record(){
+  const {A,F,sev,match,kb,egt,oil} = S;
+  LOG.push({t:new Date().toLocaleTimeString('ko-KR',{hour12:false}), A,F,sev,
+            m: match==='ASYNC'?'비동기':match, part:kb.part, act:kb.actions[0]||'추세 모니터링',
+            egt:S.E, egtS:egt.sev, oil:S.O, oilS:oil.sev});
+  renderLog();
+}
+function clearLog(){ LOG=[]; renderLog(); }
+function renderLog(){
+  const t=$('logtable');
+  if(!LOG.length){ t.innerHTML=`<tr><td class="empty">아직 저장된 진단이 없습니다. 값을 입력하고 <b>[진단 기록 저장]</b>을 누르세요.</td></tr>`; return; }
+  const cls={'정상':'b-ok','주의':'b-caution','경고':'b-warn'};
+  t.innerHTML = `<tr><th>#</th><th>진폭</th><th>주파수</th><th>EGT</th><th>오일압력</th><th>판정</th><th>매칭</th><th>추정 부위</th></tr>` +
+    LOG.map((r,i)=>`<tr>
+      <td>${i+1}</td>
+      <td>${r.A.toFixed(2)}</td>
+      <td>${r.F.toLocaleString()}</td>
+      <td><span class="badge ${cls[r.egtS]}" style="padding:1px 6px">${r.egt}°</span></td>
+      <td><span class="badge ${cls[r.oilS]}" style="padding:1px 6px">${r.oil}</span></td>
+      <td><span class="badge ${cls[r.sev]}">${r.sev}</span></td>
+      <td>${r.m}</td>
+      <td style="font-weight:500;font-size:11.5px">${r.part}</td>
+    </tr>`).join('');
+}
+function exportCSV(){
+  if(!LOG.length){ alert('저장된 진단 기록이 없습니다.'); return; }
+  const head='번호,진폭(IPS),주파수(Hz),EGT(C),EGT판정,오일압력(kPa),오일판정,진동판정,주파수매칭,추정부위,1차조치\n';
+  const body=LOG.map((r,i)=>[i+1,r.A,r.F,r.egt,r.egtS,r.oil,r.oilS,r.sev,r.m,`"${r.part}"`,`"${r.act}"`].join(',')).join('\n');
+  const blob=new Blob(['﻿'+head+body],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='진동_동반신호_진단_실습기록표.csv'; a.click();
+}
+
+/* ---------- 잔존수명(RUL) 추정 ---------- */
+/* 운용시간별 진폭에 선형·지수 추세선을 맞추고, 한계 L에 닿는 시점까지 외삽한다 (ISO 13381-1 추세 외삽법) */
+/* 실습 사례 1~5 각각의 과거 진동 기록 (교육용 가상 시나리오). 마지막 줄 = 사례의 현재 측정 진폭 */
+const TRENDS = {
+  1:{data:'0, 0.15\n300, 0.14\n600, 0.16\n900, 0.15\n1200, 0.14\n1500, 0.15',
+     note:'<b>사례 1 · 정상 엔진</b> — 1,500 FH 동안 6회 측정. 진폭이 0.14~0.16 사이에서 오르내릴 뿐 커지지 않는다.'},
+  2:{data:'0, 0.30\n250, 0.37\n500, 0.45\n750, 0.52\n1000, 0.60\n1250, 0.68\n1500, 0.75',
+     note:'<b>사례 2 · 팬 불균형 (1×N1)</b> — 팬에 오염·결빙이 쌓이며 진폭이 250 FH마다 약 0.07씩 <b>일정한 양</b>으로 커졌다(직선형). 이미 한계를 넘었다.'},
+  3:{data:'0, 0.30\n200, 0.33\n400, 0.37\n600, 0.40\n800, 0.44\n1000, 0.48\n1200, 0.52',
+     note:'<b>사례 3 · HP 로터 불균형 (1×N2)</b> — 1,200 FH 동안 서서히 증가. 아직 한계 전이지만 P점(주의 0.40)은 이미 지났다.'},
+  4:{data:'0, 0.20\n100, 0.21\n200, 0.23\n300, 0.27\n400, 0.33\n500, 0.42\n600, 0.53\n700, 0.68',
+     note:'<b>사례 4 · 베어링 결함 (비동기)</b> — 처음엔 잠잠하다가 박리가 퍼지며 <b>점점 빨리</b> 커졌다(지수형). 이미 한계를 넘었다.'},
+  5:{data:'0, 0.25\n100, 0.27\n200, 0.29\n300, 0.33\n400, 0.37\n500, 0.42\n600, 0.47',
+     note:'<b>사례 5 · 팬 블레이드 손상 (BPF)</b> — FOD 흠집에서 균열이 자라며 증가 폭이 매번 커진다(지수형). 손상이 손상을 키우는 전형.'}
+};
+const P_LEVEL = 0.40, KSIG = 2;
+function loadTrend(k){
+  const c = TRENDS[k];
+  $('trend').value = c.data;
+  $('trendNote').innerHTML = c.note;
+  $('tnow').value = c.data.trim().split('\n').pop().split(',')[0].trim();
+  rul();
+}
+function parseTrend(){
+  return $('trend').value.split('\n')
+    .map(l => l.trim().split(/[\s,]+/).map(Number))
+    .filter(p => p.length>=2 && isFinite(p[0]) && isFinite(p[1]) && p[1]>0)
+    .map(p => ({t:p[0], a:p[1]}))
+    .sort((x,y) => x.t-y.t);
+}
+function addPoint(){
+  if($('tnow').value==='' || !(S.A>0)) return;
+  const t = +$('tnow').value;
+  const pts = parseTrend().filter(p => p.t!==t);
+  pts.push({t, a:S.A});
+  pts.sort((x,y) => x.t-y.t);
+  $('trend').value = pts.map(p => `${p.t}, ${p.a}`).join('\n');
+  rul();
+}
+
+/* 최소제곱 직선을 g(A)에 맞춘다 — 선형: g(A)=A, 지수: g(A)=ln A */
+function fitTrend(kind, pts, L){
+  const g  = kind==='exp' ? Math.log : (y => y);
+  const gi = kind==='exp' ? Math.exp : (y => y);
+  const xs = pts.map(p => p.t), ys = pts.map(p => g(p.a)), n = xs.length;
+  const mx = xs.reduce((s,v)=>s+v,0)/n, my = ys.reduce((s,v)=>s+v,0)/n;
+  let sxx=0, sxy=0;
+  for(let i=0;i<n;i++){ sxx += (xs[i]-mx)**2; sxy += (xs[i]-mx)*(ys[i]-my); }
+  const b = sxx ? sxy/sxx : 0, a = my - b*mx;
+  const sse = ys.reduce((q,y,i)=>q+(y-a-b*xs[i])**2, 0);
+  const s = n>2 ? Math.sqrt(sse/(n-2)) : 0;       // 잔차 표준편차 σ
+  // 결정계수는 두 모델을 같은 잣대로 비교하도록 원래 진폭 단위에서 계산
+  const am = pts.reduce((q,p)=>q+p.a,0)/n;
+  const sst = pts.reduce((q,p)=>q+(p.a-am)**2,0);
+  const sseA = pts.reduce((q,p)=>q+(p.a-gi(a+b*p.t))**2,0);
+  const tNow = xs[n-1];
+  const cross = off => b>0 ? (g(L) - a + off)/b : Infinity;   // 추세선(+off)이 한계 L에 닿는 시점
+  return {
+    kind, label: kind==='exp' ? '지수' : '선형', a, b, s, r2: sst ? 1-sseA/sst : 0,
+    f: t => gi(a+b*t), band: (t,k) => gi(a+b*t+k*s),
+    rul: cross(0)-tNow, early: cross(-KSIG*s)-tNow, late: cross(KSIG*s)-tNow
+  };
+}
+
+function rul(){
+  const pts = parseTrend(), L = +$('limit').value;
+  const M = Math.max(0, Math.min(90, +$('margin').value || 0))/100;
+  const out = $('rulOut'), fmt = v => Math.round(v).toLocaleString();
+  if(pts.length < 3 || !(L > 0)){
+    out.innerHTML = `<div class="rul-dec">추세 데이터가 <b>3점 이상</b> 있어야 추세선을 그릴 수 있다. ①의 [사례 1~5]를 누르거나, 측정할 때마다 [① 진폭을 기록에 추가]로 점을 쌓아라.</div>`;
+    drawRul(pts, L, null, null); return;
+  }
+  const tNow = pts[pts.length-1].t, aNow = pts[pts.length-1].a, span = tNow - pts[0].t;
+  const fits = {lin: fitTrend('lin', pts, L), exp: fitTrend('exp', pts, L)};
+  const mode = $('rmodel').value;
+  const pick = mode==='auto' ? (fits.exp.rul <= fits.lin.rul ? fits.exp : fits.lin) : fits[mode];
+
+  let big, dec, warns = [], drawPick = pick;
+  if(aNow >= L){
+    big = `<span class="unit">RUL</span><span class="num" style="color:var(--warn)">0</span><span class="unit">FH</span>
+           <span class="range">마지막 측정 ${aNow.toFixed(2)} IPS가 이미 한계 ${L.toFixed(2)} IPS 이상</span>`;
+    dec = `<b style="color:var(--warn)">F 기준 도달 — 즉시 정비.</b> 남은 시간을 추정할 단계가 지났다. ⑥의 정비 작업을 바로 수행한다.`;
+    // 되돌아보기: 기록상 언제 P점을 넘었고 언제 한계에 닿았나
+    const pP = pts.find(p => p.a >= P_LEVEL), pF = pts.find(p => p.a >= L);
+    if(pP && pF && pF.t > pP.t)
+      dec += `<br>되돌아보면 <b>${fmt(pP.t)} FH</b>에 이미 P점(0.40)을 넘었고 <b>${fmt(pF.t)} FH</b>에 한계에 닿았다.
+              P점을 넘은 그때 RUL을 계산했다면 약 <b>${fmt(pF.t-pP.t)} FH</b> 앞서 정비를 계획할 수 있었다.`;
+    drawPick = null;
+  } else if(!(pick.b > 0) || pick.b*span < KSIG*pick.s){
+    // 기울기가 0 이하이거나, 기록 기간 동안의 증가 폭이 측정 흩어짐(2σ)보다 작으면 '추세 없음'
+    big = `<span class="num" style="color:var(--ok)">—</span><span class="range">뚜렷한 증가 추세 없음 · RUL 계산 안 함</span>`;
+    dec = `진폭이 측정 오차 범위 안에서 오르내릴 뿐 꾸준히 커지지 않는다. 추세선이 한계선을 향해 가지 않으므로
+           RUL을 내지 않는다 — <b>정상 주기로 추세 감시를 계속</b>한다.`;
+    drawPick = null;
+  } else {
+    const lo = Math.max(0, pick.early), hi = pick.late, plan = lo*(1-M);
+    const col = plan <= 0 ? 'var(--warn)' : (aNow >= P_LEVEL ? 'var(--caution)' : 'var(--ok)');
+    big = `<span class="unit">RUL ≈</span><span class="num" style="color:${col}">${fmt(pick.rul)}</span><span class="unit">FH</span>
+           <span class="range">오차범위(±2σ) ${fmt(lo)} ~ ${isFinite(hi) ? fmt(hi) : '∞'} FH · ${pick.label} 추세 채택</span>`;
+    const pf = aNow >= P_LEVEL
+      ? `마지막 측정(${fmt(tNow)} FH) ${aNow.toFixed(2)} IPS — 이미 <b>P점(주의 0.40)을 지나 P–F 구간 안</b>에 있다.`
+      : `마지막 측정(${fmt(tNow)} FH) ${aNow.toFixed(2)} IPS — 아직 P점(주의 0.40) 이전이다.`;
+    const both = fits.lin.b > 0 && fits.exp.b > 0
+      ? `<br>같은 기록이라도 <b>선형</b>으로 보면 ${fmt(fits.lin.rul)} FH, <b>지수</b>로 보면 ${fmt(fits.exp.rul)} FH 남았다.
+         ${mode==='auto' ? '자동은 <b>짧은 쪽</b>을 택한다 — 틀리더라도 일찍 정비하는 쪽이 안전하기 때문이다.' : ''}` : '';
+    dec = `${pf}${both}<br>정비 권장 시점: RUL 하한 ${fmt(lo)} FH에서 안전 여유 ${Math.round(M*100)}%를 빼면
+           <b>지금부터 ${fmt(plan)} FH 이내</b>(누적 ${fmt(tNow+plan)} FH 이전)에 점검·정비를 계획한다.`;
+    if(plan <= 0) dec += `<br><b style="color:var(--warn)">오차범위 하한이 이미 0 — 즉시 점검을 권고한다.</b>`;
+    if(pick.rul > span) warns.push(`추정 RUL(${fmt(pick.rul)} FH)이 데이터 구간(${fmt(span)} FH)보다 길다 — 먼 외삽일수록 불확실하므로 측정 주기를 줄여 재추정하라.`);
+    if(pick.r2 < 0.7) warns.push(`추세선 적합도가 낮다(R² = ${pick.r2.toFixed(2)}) — 다른 모델과 비교하거나 데이터를 더 모아라.`);
+    if(mode==='lin' && fits.exp.rul < fits.lin.rul) warns.push(`지수 추세로 보면 RUL이 ${fmt(fits.exp.rul)} FH로 더 짧다 — 가속 열화라면 선형은 낙관적이다.`);
+  }
+
+  const row = f => `<tr${f===pick ? ' class="match"' : ''}>
+      <td>${f.label}${f===pick ? ' ◀ 채택' : ''}</td><td>${(Math.abs(f.r2) < 0.005 ? 0 : f.r2).toFixed(2)}</td>
+      <td>${aNow >= L ? '0 FH (이미 초과)' : f.b>0 ? fmt(Math.max(0, f.rul))+' FH' : '추세 없음'}</td></tr>`;
+  out.innerHTML = `<div class="rul-big">${big}</div><div class="rul-dec">${dec}</div>` +
+    warns.map(w => `<div class="rul-warn">⚠ ${w}</div>`).join('') +
+    `<table><tr><th>추세 모델</th><th>적합도 R²</th><th>RUL (한계 ${L.toFixed(2)} IPS까지)</th></tr>${row(fits.lin)}${row(fits.exp)}</table>`;
+  drawRul(pts, L, fits, drawPick);
+}
+
+/* ---------- RUL 추세 차트 SVG ---------- */
+function drawRul(pts, L, fits, pick){
+  const W=900, H=300, ml=52, mr=18, mt=18, mb=40, pw=W-ml-mr, ph=H-mt-mb;
+  if(!pts.length){
+    $('rulchart').innerHTML = `<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="#080F1C" stroke="#25344F"/>
+      <text x="${ml+pw/2}" y="${mt+ph/2}" fill="#63799A" font-size="13" text-anchor="middle">추세 데이터 없음</text>`;
+    return;
+  }
+  const t0 = pts[0].t, tNow = pts[pts.length-1].t, span = Math.max(tNow-t0, 1);
+  let tEnd = tNow + span*0.3;
+  if(pick) tEnd = Math.max(tEnd, tNow + (isFinite(pick.late) ? pick.late*1.08 : pick.rul*1.2));
+  tEnd = Math.min(tEnd, tNow + span*3);
+  const amax = Math.max((L>0 ? L : 0.6)*1.25, ...pts.map(p => p.a*1.1));
+  const X = t => ml + (t-t0)/(tEnd-t0)*pw;
+  const Y = a => mt + ph - a/amax*ph;
+  const niceStep = r => { const p = 10**Math.floor(Math.log10(r)), m = r/p; return (m<1.5?1:m<3?2:m<7?5:10)*p; };
+
+  let s = `<defs><clipPath id="rclip"><rect x="${ml}" y="${mt}" width="${pw}" height="${ph}"/></clipPath></defs>
+    <rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="#080F1C" stroke="#25344F"/>`;
+  const step = niceStep((tEnd-t0)/6);
+  for(let t=Math.ceil(t0/step)*step; t<=tEnd; t+=step){
+    s += `<line x1="${X(t)}" y1="${mt}" x2="${X(t)}" y2="${mt+ph}" stroke="var(--grid)"/>
+          <text x="${X(t)}" y="${mt+ph+15}" fill="#63799A" font-size="10" text-anchor="middle">${Math.round(t).toLocaleString()}</text>`;
+  }
+  for(let i=0;i<=4;i++){
+    const a = amax*i/4;
+    s += `<line x1="${ml}" y1="${Y(a)}" x2="${ml+pw}" y2="${Y(a)}" stroke="var(--grid)"/>
+          <text x="${ml-7}" y="${Y(a)+4}" fill="#63799A" font-size="10" text-anchor="end">${a.toFixed(2)}</text>`;
+  }
+  s += `<text x="${ml+pw/2}" y="${H-6}" fill="#8FA3BF" font-size="11" text-anchor="middle">누적 운용시간 (FH)</text>
+        <text x="13" y="${mt+ph/2}" fill="#8FA3BF" font-size="11" text-anchor="middle" transform="rotate(-90 13 ${mt+ph/2})">진폭 (IPS)</text>`;
+
+  // P점(주의) · 한계 L
+  s += `<line x1="${ml}" y1="${Y(P_LEVEL)}" x2="${ml+pw}" y2="${Y(P_LEVEL)}" stroke="var(--caution)" stroke-width="1.1" stroke-dasharray="5 4" opacity=".8"/>
+        <text x="${ml+6}" y="${Y(P_LEVEL)-5}" fill="var(--caution)" font-size="10">P · 주의 0.40</text>`;
+  if(L>0) s += `<line x1="${ml}" y1="${Y(L)}" x2="${ml+pw}" y2="${Y(L)}" stroke="var(--warn)" stroke-width="1.4" stroke-dasharray="7 4"/>
+        <text x="${ml+6}" y="${Y(L)-5}" fill="var(--warn)" font-size="10">F 기준 · 한계 ${L.toFixed(2)}</text>`;
+
+  // 채택 모델 오차 띠(±2σ) — 현재 이후 구간
+  let g = `<g clip-path="url(#rclip)">`;
+  if(pick && pick.s > 0){
+    const N=50, up=[], dn=[];
+    for(let i=0;i<=N;i++){ const t = tNow + (tEnd-tNow)*i/N; up.push(`${X(t)},${Y(pick.band(t, KSIG))}`); dn.unshift(`${X(t)},${Y(pick.band(t, -KSIG))}`); }
+    const c = pick.kind==='exp' ? 'var(--n2)' : 'var(--n1)';
+    g += `<polygon points="${up.concat(dn).join(' ')}" fill="${c}" opacity=".12"/>`;
+  }
+  // 추세선 — 채택 모델은 굵은 실선, 나머지는 가는 점선
+  if(fits){
+    for(const f of [fits.lin, fits.exp]){
+      const on = pick ? f===pick : true;
+      let d = '';
+      for(let i=0;i<=80;i++){ const t = t0 + (tEnd-t0)*i/80; d += `${i?'L':'M'} ${X(t)} ${Y(f.f(t))} `; }
+      g += `<path d="${d}" fill="none" stroke="${f.kind==='exp'?'var(--n2)':'var(--n1)'}"
+              stroke-width="${on && pick ? 2.4 : 1.2}" stroke-dasharray="${on && pick ? '' : '5 4'}" opacity="${on ? 1 : .55}"/>`;
+    }
+  }
+  g += `</g>`;
+  s += g;
+
+  // 현재 시점
+  s += `<line x1="${X(tNow)}" y1="${mt}" x2="${X(tNow)}" y2="${mt+ph}" stroke="#8FA3BF" stroke-width="1" stroke-dasharray="2 3"/>
+        <text x="${X(tNow)}" y="${mt+ph-6}" fill="#8FA3BF" font-size="10" text-anchor="middle">현재</text>`;
+
+  // RUL 화살표 — 현재부터 추세선이 한계에 닿는 지점까지
+  if(pick && L>0){
+    const tc = tNow + pick.rul, xc = Math.min(X(tc), ml+pw), ya = Y(L) - 16;
+    s += `<line x1="${X(tNow)}" y1="${ya}" x2="${xc}" y2="${ya}" stroke="#FFF" stroke-width="1.4"/>
+          <polygon points="${xc},${ya} ${xc-7},${ya-4} ${xc-7},${ya+4}" fill="#FFF"/>
+          <text x="${(X(tNow)+xc)/2}" y="${ya-6}" fill="#FFF" font-size="11" font-weight="700" text-anchor="middle">RUL ≈ ${Math.round(pick.rul).toLocaleString()} FH</text>`;
+    if(X(tc) <= ml+pw) s += `<circle cx="${X(tc)}" cy="${Y(L)}" r="5" fill="var(--warn)" stroke="#0B1220" stroke-width="1.5"/>`;
+  }
+
+  // 측정점
+  for(const p of pts) s += `<circle cx="${X(p.t)}" cy="${Y(Math.min(p.a, amax))}" r="4" fill="#FFF" stroke="#0B1220" stroke-width="1.4"/>`;
+  $('rulchart').innerHTML = s;
+}
+
+/* ---------- 시계 ---------- */
+setInterval(()=>{ $('clock').textContent = 'MONITORING · ' + new Date().toLocaleTimeString('ko-KR',{hour12:false}); },1000);
+
+loadTrend(3);   // 기본 입력값(0.52 IPS · 165 Hz)이 사례 3과 같다
+diagnose(); renderLog();
+</script>
+</body>
+</html>
